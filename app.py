@@ -1,6 +1,5 @@
 # importing the required libraries
-from flask import jsonify, Flask, session, render_template, request, redirect, url_for
-from flask_session import Session
+from flask import jsonify, Flask, render_template, request, redirect, url_for
 from flask_cors import CORS, cross_origin
 from numpy import genfromtxt
 import pandas as pd
