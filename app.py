@@ -3,9 +3,6 @@ from flask import jsonify, Flask, render_template, request, redirect, url_for
 from flask_cors import CORS, cross_origin
 from numpy import genfromtxt
 import pandas as pd
-from sklearn.metrics import mean_squared_error
-from sklearn.metrics import mean_absolute_error
-from sklearn.metrics import mean_absolute_percentage_error
 from numpy import array
 from keras.models import Sequential
 from keras.layers import LSTM
@@ -13,9 +10,7 @@ from keras.layers import Dense
 import tensorflow as tf
 import numpy as np
 import os
-import shutil
 import io
-import pickle
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -80,7 +75,6 @@ def train_model():
         price_dict = dict(sorted(price_list.values.tolist()))
         p.close()
 
-    price_list = session.get('price_list')
     cols = list(pd_data.columns)[1:]
     model = create_model()
     n_steps = 14
