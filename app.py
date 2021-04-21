@@ -7,7 +7,6 @@ from numpy import array
 from keras.models import Sequential
 from keras.layers import LSTM
 from keras.layers import Dense
-import tensorflow as tf
 import numpy as np
 import os
 import io
@@ -149,7 +148,7 @@ def make_prediction():
         pd_data =  pd.read_csv(d, delimiter=',',encoding='utf-8')
         d.close()
     cols = list(pd_data.columns)[1:]
-    loaded_model = tf.keras.models.load_model(f'./models/{data_key}')
+    loaded_model = keras.models.load_model(f'./models/{data_key}')
     prediction_array = np.zeros(shape=(len(cols)))
     n_steps = 14
     n_features = 1
