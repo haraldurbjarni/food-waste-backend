@@ -5,11 +5,12 @@ from numpy import genfromtxt
 import pandas as pd
 from numpy import array
 from keras.models import Sequential
-from keras.layers import LSTM
+from keras.layers import LSTM, SimpleRNN, GRU, Bidirectional
 from keras.layers import Dense
 import numpy as np
 import os
 import io
+import tensorflow as tf
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -25,13 +26,35 @@ app.config['CORS_HEADERS'] = 'Content-Type'
 @cross_origin(supports_credentials=True)
 def upload_file():
     if request.method == 'POST':
-
         f = request.files['file']
         random_string = os.urandom(10).hex() 
         hashmap[random_string] = f
         f.save(f'./files/{random_string}.csv')
         print('Data key set',random_string,':',f)
-        return jsonify({'key': random_string}), 200, {'ContentType':'application/json'} 
+
+        perday_array = np.genfromtxt(f'./files/{random_string}.csv', delimiter=",")[1:,1:]
+        print(perday_array)
+        df = pd.read_csv(f'./files/{random_string}.csv') 
+        dates = list(df['Dags reiknings'])
+        sales_list = []
+        perday_totals = []
+        for i in range(perday_array.shape[0]):
+            sales_list.append(np.sum(perday_array[i]))
+            perday_totals.append({'name': dates[i],'data':sales_list[i]})
+        
+        product_list = []
+        products = list(df.head())[1:]
+        product_totals = []
+        for i in range(perday_array.shape[1]):
+            product_list.append((np.sum(perday_array[:,i]),i))
+        product_list.sort(reverse=True)
+        for i in range(10):
+            product_totals.append({'name':product_list[i][0], 'data': products[product_list[i][1]]})
+        print(product_totals)
+
+        return jsonify({'key': random_string,
+                        'Perday totals': perday_totals,
+                        'Product totals': product_totals}), 200, {'ContentType':'application/json'} 
 
 @app.route('/api/upload_prices',  methods=['POST'])
 def upload_prices():
@@ -61,6 +84,7 @@ def train_model():
     data_key = request.args.get('dataKey')
     price_key = request.args.get('priceKey')
     profit_margin = request.args.get('profitMargin')
+    model_type = request.args.get('modelType')
 
     with open(f'./files/{data_key}.csv','rb') as d:
         pd_data =  pd.read_csv(d, delimiter=',',encoding='utf-8')
@@ -75,7 +99,7 @@ def train_model():
         p.close()
 
     cols = list(pd_data.columns)[1:]
-    model = create_model()
+    model = create_model(model_type)
     n_steps = 14
     n_features = 1
     output_window = 7
@@ -148,7 +172,7 @@ def make_prediction():
         pd_data =  pd.read_csv(d, delimiter=',',encoding='utf-8')
         d.close()
     cols = list(pd_data.columns)[1:]
-    loaded_model = keras.models.load_model(f'./models/{data_key}')
+    loaded_model = tf.keras.models.load_model(f'./models/{data_key}')
     prediction_array = np.zeros(shape=(len(cols)))
     n_steps = 14
     n_features = 1
@@ -178,18 +202,25 @@ def make_prediction():
 
 
 
-def create_model():
+def create_model(type):
     #Model 1: LSTM
-    model_2 = Sequential()
+    model = Sequential()
     n_steps = 14
     n_features = 1
     output_window = 7
-    model_2.add(LSTM(20, activation='relu', input_shape=(n_steps, n_features)))
+    if type == 'LSTM':
+        model.add(LSTM(20, activation='relu', input_shape=(n_steps, n_features)))
+    elif type == 'RNN':
+        model.add(SimpleRNN(20, activation='relu', input_shape=(n_steps, n_features)))
+    elif type == 'GRU':
+        model.add(GRU(20, activation='relu', input_shape=(n_steps, n_features)))
+    elif type == 'RNN':
+        model.add(Bidirectional(LSTM(20, activation='relu', input_shape=(n_steps, n_features))))
     #model_2.add(LSTM(10, activation='relu', return_sequences=True, input_shape=(n_steps, n_features)))
     #model_2.add(LSTM(10, activation='relu'))
-    model_2.add(Dense(1))
-    model_2.compile(optimizer='adam', loss='mse')
-    return model_2
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss='mse')
+    return model
 
 def split_sequence_sum(sequence, output_window, n_steps):
     X, y = list(), list()
