@@ -96,6 +96,7 @@ def train_model():
         training_status[data_key] = {
             'ready': False,
             'model': None,
+            'progress': 0.01,
         }
 
         with open(f'./files/{data_key}.csv','rb') as d:
@@ -128,12 +129,14 @@ def train_model():
             X_val = np.expand_dims(X_val, axis=0)
 
             y_val = y[y.shape[0]-1]
-            model.fit(X_train, y_train, epochs=100, verbose=0)
+            model.fit(X_train, y_train, epochs=20, verbose=0)
             y_pred = model.predict(X_val)
             y_pred = np.floor(y_pred[0])
 
             prediction_array[i] = y_pred[0]
             actual_value_array[i] = y_val
+
+            training_status[data_key]['progress'] = (i + 1) / len(cols)
 
         prediction_array = np.array([0 if i<0 else i for i in list(prediction_array)])
         model_dict = {}
