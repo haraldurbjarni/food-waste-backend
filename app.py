@@ -21,6 +21,9 @@ CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "*"}})
 app.config['CORS_HEADERS'] = 'Content-Type'
 
 
+if not os.path.exists('./files'):
+    os.makedirs('./files')
+
 # render default webpage
 @app.route('/api/upload_data',  methods=['POST'])
 @cross_origin(supports_credentials=True)
