@@ -17,7 +17,7 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 # start flask
 app = Flask(__name__)
 hashmap = {}
-CORS(app, supports_credentials=True)
+CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "*"}})
 app.config['CORS_HEADERS'] = 'Content-Type'
 
 
