@@ -24,6 +24,9 @@ app.config['CORS_HEADERS'] = 'Content-Type'
 if not os.path.exists('./files'):
     os.makedirs('./files')
 
+if not os.path.exists('./models'):
+    os.makedirs('./models')
+
 # render default webpage
 @app.route('/api/upload_data',  methods=['POST'])
 @cross_origin(supports_credentials=True)
