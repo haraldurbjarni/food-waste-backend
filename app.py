@@ -11,6 +11,7 @@ import numpy as np
 import os
 import io
 import tensorflow as tf
+from threading import Thread
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -19,6 +20,10 @@ app = Flask(__name__)
 hashmap = {}
 CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "*"}})
 app.config['CORS_HEADERS'] = 'Content-Type'
+
+training_status = {
+    # {ready: boolean, model: None | model}
+}
 
 
 if not os.path.exists('./files'):
@@ -86,84 +91,107 @@ def test():
 @app.route('/api/train_model',  methods=['GET'])
 @cross_origin(supports_credentials=True)
 def train_model():
-    #getting the data from the requests
+
+    def training_thread(data_key, price_key, profit_margin, model_type):        
+        training_status[data_key] = {
+            'ready': False,
+            'model': None,
+        }
+
+        with open(f'./files/{data_key}.csv','rb') as d:
+            pd_data =  pd.read_csv(d, delimiter=',',encoding='utf-8')
+            d.close()
+        with open(f'./files/{data_key}.csv','r') as f:
+            ml_data = genfromtxt(f, delimiter=',')
+            ml_data = ml_data[1:,1:]
+            f.close()
+        with open(f'./files/{price_key}.csv','r') as p:
+            price_list = pd.read_csv(p, delimiter=',',encoding='utf-8')
+            price_dict = dict(sorted(price_list.values.tolist()))
+            p.close()
+
+        cols = list(pd_data.columns)[1:]
+        model = create_model(model_type)
+        n_steps = 14
+        n_features = 1
+        output_window = 7
+        leave_out_number = 7
+        prediction_array = np.zeros(shape=(len(cols)))
+        actual_value_array = np.zeros(shape=(len(cols)))
+        for i,item in enumerate(cols):
+            data = ml_data[:,i]
+            X, y = split_sequence_sum(data,output_window, n_steps)
+            X = X.reshape((X.shape[0], X.shape[1], n_features))
+            X_train = X[:X.shape[0]-leave_out_number-1]
+            y_train = y[:y.shape[0]-leave_out_number-1]
+            X_val = X[X.shape[0]-1]
+            X_val = np.expand_dims(X_val, axis=0)
+
+            y_val = y[y.shape[0]-1]
+            model.fit(X_train, y_train, epochs=100, verbose=0)
+            y_pred = model.predict(X_val)
+            y_pred = np.floor(y_pred[0])
+
+            prediction_array[i] = y_pred[0]
+            actual_value_array[i] = y_val
+
+        prediction_array = np.array([0 if i<0 else i for i in list(prediction_array)])
+        model_dict = {}
+        total_sales_profit = 0
+        total_capital_wasted = 0
+        total_capital_misseed_out_on = 0
+        for i in range(prediction_array.shape[0]):
+            profit_margin = float(profit_margin)
+            price = (price_dict[cols[i]])*profit_margin
+
+            capital_wasted = 0
+            capital_missed_out_on = 0
+            if actual_value_array[i] > prediction_array[i]:
+                sales_profit = prediction_array[i]*price
+                capital_missed_out_on = (actual_value_array[i]-prediction_array[i])*price
+            elif actual_value_array[i] < prediction_array[i]:
+                sales_profit = actual_value_array[i]*price
+                capital_wasted = (prediction_array[i] - actual_value_array[i])*(price_dict[cols[i]]*(1-profit_margin))
+            else:
+                sales_profit = actual_value_array[i]*price
+            total_sales_profit+=sales_profit
+            total_capital_misseed_out_on+=capital_missed_out_on
+            total_capital_wasted+=capital_wasted
+            model_dict[cols[i]] = {
+                'Predicted value': prediction_array[i],
+                'Actual value': actual_value_array[i],
+                'Price': price_dict[cols[i]],
+                'Sales profit': sales_profit, 
+                'Capital missed out on': capital_missed_out_on, 
+                'Capital wasted': capital_wasted
+            }
+        model.save(f'./models/{data_key}')
+
+        results = [model_dict, {'Total sales profit':total_sales_profit,
+                                'Total capital missed out on': total_capital_misseed_out_on,
+                                 'Total capital wasted': total_capital_wasted}]
+
+        training_status[data_key] = {
+            'ready': True,
+            'model': results
+        }
+
+    
     data_key = request.args.get('dataKey')
     price_key = request.args.get('priceKey')
     profit_margin = request.args.get('profitMargin')
     model_type = request.args.get('modelType')
 
-    with open(f'./files/{data_key}.csv','rb') as d:
-        pd_data =  pd.read_csv(d, delimiter=',',encoding='utf-8')
-        d.close()
-    with open(f'./files/{data_key}.csv','r') as f:
-        ml_data = genfromtxt(f, delimiter=',')
-        ml_data = ml_data[1:,1:]
-        f.close()
-    with open(f'./files/{price_key}.csv','r') as p:
-        price_list = pd.read_csv(p, delimiter=',',encoding='utf-8')
-        price_dict = dict(sorted(price_list.values.tolist()))
-        p.close()
+    thread = Thread(target=training_thread, args=[data_key, price_key, profit_margin, model_type])
+    thread.start()
 
-    cols = list(pd_data.columns)[1:]
-    model = create_model(model_type)
-    n_steps = 14
-    n_features = 1
-    output_window = 7
-    leave_out_number = 7
-    prediction_array = np.zeros(shape=(len(cols)))
-    actual_value_array = np.zeros(shape=(len(cols)))
-    for i,item in enumerate(cols):
-        data = ml_data[:,i]
-        X, y = split_sequence_sum(data,output_window, n_steps)
-        X = X.reshape((X.shape[0], X.shape[1], n_features))
-        X_train = X[:X.shape[0]-leave_out_number-1]
-        y_train = y[:y.shape[0]-leave_out_number-1]
-        X_val = X[X.shape[0]-1]
-        X_val = np.expand_dims(X_val, axis=0)
+    data_key = request.args.get('dataKey')
+    return jsonify({'ok': True, 'key': data_key})
 
-        y_val = y[y.shape[0]-1]
-        model.fit(X_train, y_train, epochs=200, verbose=0)
-        y_pred = model.predict(X_val)
-        y_pred = np.floor(y_pred[0])
-
-        prediction_array[i] = y_pred[0]
-        actual_value_array[i] = y_val
-
-    prediction_array = np.array([0 if i<0 else i for i in list(prediction_array)])
-    model_dict = {}
-    total_sales_profit = 0
-    total_capital_wasted = 0
-    total_capital_misseed_out_on = 0
-    for i in range(prediction_array.shape[0]):
-        profit_margin = float(profit_margin)
-        price = (price_dict[cols[i]])*profit_margin
-
-        capital_wasted = 0
-        capital_missed_out_on = 0
-        if actual_value_array[i] > prediction_array[i]:
-            sales_profit = prediction_array[i]*price
-            capital_missed_out_on = (actual_value_array[i]-prediction_array[i])*price
-        elif actual_value_array[i] < prediction_array[i]:
-            sales_profit = actual_value_array[i]*price
-            capital_wasted = (prediction_array[i] - actual_value_array[i])*(price_dict[cols[i]]*(1-profit_margin))
-        else:
-            sales_profit = actual_value_array[i]*price
-        total_sales_profit+=sales_profit
-        total_capital_misseed_out_on+=capital_missed_out_on
-        total_capital_wasted+=capital_wasted
-        model_dict[cols[i]] = {
-            'Predicted value': prediction_array[i],
-            'Actual value': actual_value_array[i],
-            'Price': price_dict[cols[i]],
-            'Sales profit': sales_profit, 
-            'Capital missed out on': capital_missed_out_on, 
-            'Capital wasted': capital_wasted
-        }
-    model.save(f'./models/{data_key}')
-    return jsonify(model_dict, {'Total sales profit':total_sales_profit,
-                                'Total capital missed out on': total_capital_misseed_out_on,
-                                 'Total capital wasted': total_capital_wasted}
-                                 )
+@app.route('/api/trainingstatus/<id>',  methods=['GET'])
+@cross_origin(supports_credentials=True)
+def training_status_route(id):
+    return jsonify(training_status.get(id))
 
 
 @app.route('/api/make_prediction',  methods=['GET'])
